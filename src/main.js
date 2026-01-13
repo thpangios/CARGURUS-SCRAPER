@@ -26,8 +26,11 @@ async function applyFilters(page, filters, searchRadius) {
     // 4. PRICE FILTER (Minimum $35,000)
     await applyPriceFilter(page);
 
-    // 5. DEAL RATING FILTER (Great/Good/Fair) - LAST
+    // 5. DEAL RATING FILTER (Great/Good/Fair)
     await applyDealRatingFilter(page, filters.dealRatings);
+
+    // 6. SORT BY NEWEST LISTINGS - LAST
+    await applySortByNewest(page);
 
     console.log('✅ All filters applied successfully!');
 }
@@ -168,6 +171,29 @@ async function applyDealRatingFilter(page, dealRatings) {
     }
 }
 
+async function applySortByNewest(page) {
+    try {
+        console.log(`🆕 Setting sort order to: Newest listings first`);
+
+        // Click the sort dropdown button to open it
+        const sortButton = page.locator('button[role="combobox"][aria-label="Sort by:"]');
+        await sortButton.waitFor({ state: 'visible', timeout: 360000 });
+        await sortButton.click({ timeout: 360000 });
+
+        console.log(`  ✅ Opened sort dropdown`);
+        await page.waitForTimeout(1000);
+
+        // Click the actual dropdown option (div with role="option")
+        await page.click('div[role="option"]:has-text("Newest listings first")', { timeout: 360000 });
+
+        console.log(`  ✅ Selected "Newest listings first"`);
+        await page.waitForTimeout(2000); // Wait for results to update
+
+    } catch (error) {
+        console.log(`  ⚠️ Sort by newest error: ${error.message} (continuing...)`);
+    }
+}
+
 // ============================================
 // MAIN SCRAPER
 // ============================================
@@ -192,7 +218,7 @@ await Actor.main(async () => {
     console.log('🚀 Starting CarGurus Stealth Scraper with UI Filters...');
 
     // Open persistent Key-Value Store (survives between runs)
-    const kv = await Actor.openKeyValueStore('scraper-state');
+    const kv = await Actor.openKeyValueStore('scraper-state-newest');
 
     // Get or initialize page state with daily reset
     let startPage = currentPage;
@@ -204,7 +230,14 @@ await Actor.main(async () => {
         if (state.lastScrapedDate === today) {
             // Same day → continue from where we left off
             startPage = state.nextPage || 1;
-            console.log(`📅 Continuing from page ${startPage} (same day: ${today})`);
+
+            // If we've exceeded maxPages, restart from page 1
+            if (startPage > maxPages) {
+                startPage = 1;
+                console.log(`📅 All pages completed! Restarting from page 1 (same day: ${today})`);
+            } else {
+                console.log(`📅 Continuing from page ${startPage} (same day: ${today})`);
+            }
         } else {
             // Different day or first run → reset to page 1
             startPage = 1;
@@ -416,70 +449,69 @@ await Actor.main(async () => {
                     const preflight = window.__PREFLIGHT__ || {};
                     const listing = preflight.listing || {};
 
-                        // Extract from new DOM structure first (data-cg-ft attributes)
-                        const vinEl = document.querySelector('div[data-cg-ft="vin"] span._value_ujq1z_13');
-                        const makeEl = document.querySelector('div[data-cg-ft="make"] span._value_ujq1z_13');
-                        const modelEl = document.querySelector('div[data-cg-ft="model"] span._value_ujq1z_13');
-                        const trimEl = document.querySelector('div[data-cg-ft="trim"] span._value_ujq1z_13');
-                        const yearEl = document.querySelector('div[data-cg-ft="year"] span._value_ujq1z_13');
-                        const bodyTypeEl = document.querySelector('div[data-cg-ft="bodyType"] span._value_ujq1z_13');
-                        const fuelTypeEl = document.querySelector('div[data-cg-ft="fuelType"] span._value_ujq1z_13');
-                        const mileageEl = document.querySelector('div[data-cg-ft="mileage"] span._value_ujq1z_13');
+                    // Extract from new DOM structure first (data-cg-ft attributes)
+                    const vinEl = document.querySelector('div[data-cg-ft="vin"] span._value_ujq1z_13');
+                    const makeEl = document.querySelector('div[data-cg-ft="make"] span._value_ujq1z_13');
+                    const modelEl = document.querySelector('div[data-cg-ft="model"] span._value_ujq1z_13');
+                    const trimEl = document.querySelector('div[data-cg-ft="trim"] span._value_ujq1z_13');
+                    const yearEl = document.querySelector('div[data-cg-ft="year"] span._value_ujq1z_13');
+                    const bodyTypeEl = document.querySelector('div[data-cg-ft="bodyType"] span._value_ujq1z_13');
+                    const fuelTypeEl = document.querySelector('div[data-cg-ft="fuelType"] span._value_ujq1z_13');
+                    const mileageEl = document.querySelector('div[data-cg-ft="mileage"] span._value_ujq1z_13');
 
-                        let vin = vinEl ? vinEl.textContent.trim() : (listing.vin || null);
-                        if (!vin && listing.specs) {
-                            const vinSpec = listing.specs.find(s =>
-                                s.label && s.label.toLowerCase() === 'vin'
-                            );
-                            if (vinSpec) vin = vinSpec.value;
-                        }
+                    let vin = vinEl ? vinEl.textContent.trim() : (listing.vin || null);
+                    if (!vin && listing.specs) {
+                        const vinSpec = listing.specs.find(s =>
+                            s.label && s.label.toLowerCase() === 'vin'
+                        );
+                        if (vinSpec) vin = vinSpec.value;
+                    }
 
-                        // Try to extract fuel type from specs if not in DOM
-                        let fuelType = fuelTypeEl ? fuelTypeEl.textContent.trim() : null;
-                        if (!fuelType && listing.specs) {
-                            const fuelSpec = listing.specs.find(s =>
-                                s.label && (
-                                    s.label.toLowerCase().includes('fuel') ||
-                                    s.label.toLowerCase().includes('engine')
-                                )
-                            );
-                            if (fuelSpec) fuelType = fuelSpec.value;
-                        }
+                    // Try to extract fuel type from specs if not in DOM
+                    let fuelType = fuelTypeEl ? fuelTypeEl.textContent.trim() : null;
+                    if (!fuelType && listing.specs) {
+                        const fuelSpec = listing.specs.find(s =>
+                            s.label && (
+                                s.label.toLowerCase().includes('fuel') ||
+                                s.label.toLowerCase().includes('engine')
+                            )
+                        );
+                        if (fuelSpec) fuelType = fuelSpec.value;
+                    }
 
-                        const titleEl = document.querySelector('h1[data-cg-ft="vdp-listing-title"]');
-                        const title = titleEl ? titleEl.textContent.trim() : '';
+                    const titleEl = document.querySelector('h1[data-cg-ft="vdp-listing-title"]');
+                    const title = titleEl ? titleEl.textContent.trim() : '';
 
-                        // Extract price
-                        const priceEl = document.querySelector('div._price_1yep1_1 h2');
-                        const priceText = priceEl ? priceEl.textContent.trim() : null;
-                        const priceValue = priceText ? parseInt(priceText.replace(/[$,]/g, '')) : null;
+                    // Extract price
+                    const priceEl = document.querySelector('div._price_1yep1_1 h2');
+                    const priceText = priceEl ? priceEl.textContent.trim() : null;
+                    const priceValue = priceText ? parseInt(priceText.replace(/[$,]/g, '')) : null;
 
-                        // Extract dealer info
-                        const dealerNameEl = document.querySelector('[data-testid="dealerName"]');
-                        const locationFromTitle = document.querySelector('hgroup p.oqywn.sCSIz');
-                        const dealerAddressEl = document.querySelector('[data-testid="dealerAddress"] span[data-track-ui="dealer-address"]');
+                    // Extract dealer info
+                    const dealerNameEl = document.querySelector('[data-testid="dealerName"]');
+                    const locationFromTitle = document.querySelector('hgroup p.oqywn.sCSIz');
+                    const dealerAddressEl = document.querySelector('[data-testid="dealerAddress"] span[data-track-ui="dealer-address"]');
 
-                        return {
-                            vin,
-                            title: title || preflight.listingTitle,
-                            price: priceValue || preflight.listingPriceValue || listing.price,
-                            priceString: priceText || preflight.listingPriceString || listing.priceString,
-                            year: yearEl ? yearEl.textContent.trim() : (listing.year || preflight.listingYear),
-                            make: makeEl ? makeEl.textContent.trim() : (listing.make || preflight.listingMake),
-                            model: modelEl ? modelEl.textContent.trim() : (listing.model || preflight.listingModel),
-                            trim: trimEl ? trimEl.textContent.trim() : listing.trim,
-                            mileage: mileageEl ? mileageEl.textContent.trim() : (listing.mileage || listing.odometer),
-                            dealerName: dealerNameEl ? dealerNameEl.textContent.trim() : (listing.dealerName || preflight.listingSellerName),
-                            dealerCity: locationFromTitle ? locationFromTitle.textContent.trim() : (listing.dealerCity || preflight.listingSellerCity),
-                            dealerAddress: dealerAddressEl ? dealerAddressEl.textContent.trim() : null,
-                            dealRating: listing.dealRating || listing.dealBadge,
-                            bodyType: bodyTypeEl ? bodyTypeEl.textContent.trim() : listing.bodyType,
-                            fuelType: fuelType,
-                            url: window.location.href,
-                            source: 'dom',
-                            hasApiData: false
-                        };
-                    });
+                    return {
+                        vin,
+                        title: title || preflight.listingTitle,
+                        price: priceValue || preflight.listingPriceValue || listing.price,
+                        priceString: priceText || preflight.listingPriceString || listing.priceString,
+                        year: yearEl ? yearEl.textContent.trim() : (listing.year || preflight.listingYear),
+                        make: makeEl ? makeEl.textContent.trim() : (listing.make || preflight.listingMake),
+                        model: modelEl ? modelEl.textContent.trim() : (listing.model || preflight.listingModel),
+                        trim: trimEl ? trimEl.textContent.trim() : listing.trim,
+                        mileage: mileageEl ? mileageEl.textContent.trim() : (listing.mileage || listing.odometer),
+                        dealerName: dealerNameEl ? dealerNameEl.textContent.trim() : (listing.dealerName || preflight.listingSellerName),
+                        dealerCity: locationFromTitle ? locationFromTitle.textContent.trim() : (listing.dealerCity || preflight.listingSellerCity),
+                        dealerAddress: dealerAddressEl ? dealerAddressEl.textContent.trim() : null,
+                        dealRating: listing.dealRating || listing.dealBadge,
+                        bodyType: bodyTypeEl ? bodyTypeEl.textContent.trim() : listing.bodyType,
+                        fuelType: fuelType,
+                        url: window.location.href,
+                        source: 'dom'
+                    };
+                });
 
                 // Add page metadata
                 carData.pageNumber = pageToScrape;
@@ -500,7 +532,8 @@ await Actor.main(async () => {
                     const dataToSave = {
                         type: 'car_listing',
                         ...carData,
-                        scrapedAt: new Date().toISOString()
+                        scrapedAt: new Date().toISOString(),
+                        source_scraper: 'Newest'
                     };
 
                     await Actor.pushData(dataToSave);
@@ -508,7 +541,7 @@ await Actor.main(async () => {
 
                     // Send to webhook
                     try {
-                        const webhookUrl = 'https://n8n-production-0d7d.up.railway.app/webhook/cargurus';
+                        const webhookUrl = 'https://n8nsaved-production.up.railway.app/webhook/cargurus';
                         const response = await fetch(webhookUrl, {
                             method: 'POST',
                             headers: {

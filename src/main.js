@@ -541,7 +541,7 @@ await Actor.main(async () => {
 
                     // Send to webhook
                     try {
-                        const webhookUrl = 'https://n8nsaved-production.up.railway.app/webhook/cargurusb';
+                        const webhookUrl = 'https://n8nsaved-production.up.railway.app/webhook/cargurus';
                         const response = await fetch(webhookUrl, {
                             method: 'POST',
                             headers: {
